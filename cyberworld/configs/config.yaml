@@ -1,0 +1,49 @@
+# CyberWorld Configuration
+system:
+  name: "CyberWorld"
+  version: "1.2.0"
+  log_level: "INFO"
+  seed: 42
+
+data:
+  default_window_seconds: 10
+  supported_window_seconds: [10, 30, 60, 120]
+  sequence_length: 10
+  chronological_splits:
+    train: 0.70
+    validation: 0.15
+    test: 0.15
+  no_data_leakage_enforced: true
+
+model:
+  name: "CyberWorld-LSTM-WorldModel"
+  hidden_dim: 128
+  num_layers: 2
+  dropout: 0.3
+  learning_rate: 0.001
+  batch_size: 32
+  max_epochs: 50
+  early_stopping_patience: 7
+  gradient_clip_norm: 1.0
+
+forecasting:
+  default_horizon_steps: 5
+  max_horizon_steps: 10
+  confidence_decay_rate: 0.03
+
+detection:
+  elevated_threshold: 0.35
+  high_threshold: 0.65
+  critical_threshold: 0.85
+  alert_deduplication_window_seconds: 60
+
+stages:
+  - BENIGN
+  - RECONNAISSANCE
+  - INITIAL_ACCESS
+  - LATERAL_MOVEMENT
+  - COMMAND_AND_CONTROL
+  - EXFILTRATION
+
+storage:
+  database_url: "sqlite:///artifacts/cyberworld.db"

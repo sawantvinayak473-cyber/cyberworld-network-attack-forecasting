@@ -1,0 +1,30 @@
+# CyberWorld - Predictive Network Defence Using World Models
+# Core ML & Deep Learning
+torch>=2.1.0
+numpy>=1.24.0
+pandas>=2.0.0
+scikit-learn>=1.3.0
+scipy>=1.11.0
+shap>=0.43.0
+
+# Backend & API
+fastapi>=0.110.0
+uvicorn>=0.28.0
+pydantic>=2.6.0
+python-multipart>=0.0.9
+sqlalchemy>=2.0.0
+pyyaml>=6.0.1
+
+# Network & Telemetry Processing
+scapy>=2.5.0
+# Optional PCAP ingestion (also requires TShark to be installed on the host)
+pyshark>=0.6
+
+# Interactive Dashboard & Visualization
+streamlit>=1.32.0
+plotly>=5.19.0
+
+# Testing & Utilities
+pytest>=8.0.0
+httpx>=0.27.0
+python-dotenv>=1.0.0

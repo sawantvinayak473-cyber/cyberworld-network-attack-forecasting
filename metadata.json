@@ -1,0 +1,6 @@
+{
+  "name": "CyberWorld - Network Attack Forecasting",
+  "description": "Predictive Network Defence platform using World Models to learn temporal traffic dynamics, forecast infiltration progression, and map to MITRE ATT&CK stages.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

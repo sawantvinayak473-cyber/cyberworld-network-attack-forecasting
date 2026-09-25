@@ -1,0 +1,35 @@
+version: '3.8'
+
+services:
+  cyberworld-api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: cyberworld_backend
+    ports:
+      - "8000:8000"
+    environment:
+      - CYBERWORLD_ENV=production
+      - DATABASE_URL=sqlite:///artifacts/cyberworld.db
+    volumes:
+      - ./artifacts:/app/artifacts
+      - ./configs:/app/configs
+    command: uvicorn backend.api:app --host 0.0.0.0 --port 8000 --reload
+    restart: unless-stopped
+
+  cyberworld-ui:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: cyberworld_streamlit
+    ports:
+      - "8501:8501"
+    environment:
+      - STREAMLIT_SERVER_PORT=8501
+      - STREAMLIT_SERVER_HEADLESS=true
+    volumes:
+      - ./artifacts:/app/artifacts
+    command: streamlit run app/main.py --server.port 8501 --server.address 0.0.0.0
+    depends_on:
+      - cyberworld-api
+    restart: unless-stopped

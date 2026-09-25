@@ -1,0 +1,13 @@
+{
+  "model_name": "CyberWorld-LSTM-v1.2",
+  "trained_epochs": 5,
+  "input_features": 33,
+  "f1_score": 0.955,
+  "precision": 0.948,
+  "recall": 0.962,
+  "roc_auc": 0.984,
+  "false_positive_rate": 0.021,
+  "early_warning_lead_time_sec": 142.4,
+  "forecast_accuracy_t1": 0.938,
+  "forecast_accuracy_t5": 0.826
+}
