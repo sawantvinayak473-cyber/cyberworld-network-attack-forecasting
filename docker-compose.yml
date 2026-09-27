@@ -1,0 +1,58 @@
+
+services:
+  # ============================================================================
+  # 1. FastAPI REST Backend + World Model Inference Engine
+  # ============================================================================
+  cyberworld-backend:
+    build:
+      context: .
+      dockerfile: cyberworld/Dockerfile
+    container_name: cyberworld-backend
+    ports:
+      - "8000:8000"
+    environment:
+      - CYBERWORLD_ENV=production
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+      - CYBERWORLD_API_KEY=${CYBERWORLD_API_KEY:-}
+      - ABUSEIPDB_API_KEY=${ABUSEIPDB_API_KEY:-}
+    volumes:
+      # Mount artifacts directory for persistent SQLite database and trained checkpoints
+      - ./artifacts:/app/artifacts
+      - ./cyberworld/configs:/app/cyberworld/configs
+    restart: unless-stopped
+    networks:
+      - cyberworld-net
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  # ============================================================================
+  # 2. React 19 + Vite SOC Dashboard (Served via Nginx Reverse Proxy)
+  # ============================================================================
+  cyberworld-frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: cyberworld-frontend
+    ports:
+      - "3000:80"
+    depends_on:
+      cyberworld-backend:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - cyberworld-net
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost/"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+
+networks:
+  cyberworld-net:
+    name: cyberworld-network
+    driver: bridge

@@ -245,3 +245,295 @@ export async function fetchExplainability(
     };
   }
 }
+
+// ============================================================================
+// Live Network Packet Sniffer Client (Pillar 1)
+// ============================================================================
+
+export interface SnifferStatus {
+  is_running: boolean;
+  interface: string;
+  packets_captured: number;
+  bytes_captured: number;
+  active_flows_in_window: number;
+  uptime_seconds: number;
+  window_duration_seconds: number;
+  has_latest_frame: boolean;
+  scapy_available: boolean;
+}
+
+export interface SnifferInterface {
+  id: string;
+  name: string;
+}
+
+export async function fetchSnifferStatus(): Promise<SnifferStatus> {
+  const response = await fetch(`${API_BASE_URL}/api/sniffer/status`);
+  if (!response.ok) {
+    throw new Error('Failed to fetch sniffer status');
+  }
+  return response.json();
+}
+
+export async function fetchSnifferInterfaces(): Promise<SnifferInterface[]> {
+  const response = await fetch(`${API_BASE_URL}/api/sniffer/interfaces`);
+  if (!response.ok) {
+    throw new Error('Failed to fetch sniffer interfaces');
+  }
+  const data = await response.json();
+  return data.interfaces || [];
+}
+
+export async function startSniffer(interfaceName?: string, windowSeconds: number = 10): Promise<SnifferStatus> {
+  const response = await fetch(`${API_BASE_URL}/api/sniffer/start`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ interface: interfaceName, window_seconds: windowSeconds }),
+  });
+  if (!response.ok) {
+    throw new Error('Failed to start sniffer');
+  }
+  const data = await response.json();
+  return data.sensor;
+}
+
+export async function stopSniffer(): Promise<SnifferStatus> {
+  const response = await fetch(`${API_BASE_URL}/api/sniffer/stop`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+  });
+  if (!response.ok) {
+    throw new Error('Failed to stop sniffer');
+  }
+  const data = await response.json();
+  return data.sensor;
+}
+
+export async function fetchSnifferLatest(): Promise<any> {
+  const response = await fetch(`${API_BASE_URL}/api/sniffer/latest`);
+  if (!response.ok) {
+    throw new Error('Failed to fetch latest sniffer telemetry');
+  }
+  return response.json();
+}
+
+export async function injectSnifferAttack(stage: string, count: number = 150): Promise<any> {
+  const response = await fetch(`${API_BASE_URL}/api/sniffer/inject`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ stage, count }),
+  });
+  if (!response.ok) {
+    throw new Error('Failed to inject attack signature');
+  }
+  return response.json();
+}
+
+// ============================================================================
+// Closed-Loop Active Defense & SOAR Mitigation Client (Pillar 2)
+// ============================================================================
+
+export interface MitigationAction {
+  action_id: string;
+  target_ip: string;
+  target_stage: string;
+  action_type: string;
+  command_executed: string;
+  rollback_command: string;
+  status: 'ACTIVE' | 'ROLLED_BACK' | 'EXPIRED' | 'SIMULATED' | 'SIMULATED_SAFE';
+  applied_at: string;
+  expires_at?: string;
+  expiry_minutes?: number;
+  execution_mode: string;
+  analyst: string;
+  alert_id?: string;
+  notes?: string;
+  output?: string;
+}
+
+export interface MitigationPolicy {
+  policy_mode: 'MANUAL_APPROVAL' | 'AUTONOMOUS_PREDICTIVE';
+  auto_contain_threshold: number;
+  default_expiry_minutes: number;
+  os_type: string;
+}
+
+export async function applyMitigation(params: {
+  target_ip: string;
+  target_stage?: string;
+  action_type?: string;
+  execution_mode?: string;
+  expiry_minutes?: number;
+  analyst?: string;
+  alert_id?: string;
+  notes?: string;
+}): Promise<MitigationAction> {
+  const response = await fetch(`${API_BASE_URL}/api/mitigation/apply`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      target_ip: params.target_ip,
+      target_stage: params.target_stage || 'INITIAL_ACCESS',
+      action_type: params.action_type || 'DROP_INGRESS',
+      execution_mode: params.execution_mode || 'LIVE',
+      expiry_minutes: params.expiry_minutes ?? 30,
+      analyst: params.analyst || 'SOC-Analyst',
+      alert_id: params.alert_id,
+      notes: params.notes || '',
+    }),
+  });
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({ detail: 'Failed to apply containment' }));
+    throw new Error(err.detail || 'Failed to apply containment');
+  }
+  const data = await response.json();
+  return data.mitigation;
+}
+
+export async function rollbackMitigation(actionId: string, reason?: string): Promise<any> {
+  const response = await fetch(`${API_BASE_URL}/api/mitigation/rollback`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action_id: actionId, reason: reason || 'Analyst Manual Rollback' }),
+  });
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({ detail: 'Failed to rollback containment' }));
+    throw new Error(err.detail || 'Failed to rollback containment');
+  }
+  return response.json();
+}
+
+export async function fetchActiveMitigations(): Promise<MitigationAction[]> {
+  const response = await fetch(`${API_BASE_URL}/api/mitigation/active`);
+  if (!response.ok) {
+    throw new Error('Failed to fetch active mitigations');
+  }
+  const data = await response.json();
+  return data.active_mitigations || [];
+}
+
+export async function fetchMitigationHistory(limit: number = 50): Promise<MitigationAction[]> {
+  const response = await fetch(`${API_BASE_URL}/api/mitigation/history?limit=${limit}`);
+  if (!response.ok) {
+    throw new Error('Failed to fetch mitigation history');
+  }
+  const data = await response.json();
+  return data.mitigation_history || [];
+}
+
+export async function fetchMitigationPolicy(): Promise<MitigationPolicy> {
+  const response = await fetch(`${API_BASE_URL}/api/mitigation/policy`);
+  if (!response.ok) {
+    throw new Error('Failed to fetch mitigation policy');
+  }
+  return response.json();
+}
+
+export async function updateMitigationPolicy(policyMode: string, autoContainThreshold: number = 0.85): Promise<MitigationPolicy> {
+  const response = await fetch(`${API_BASE_URL}/api/mitigation/policy`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ policy_mode: policyMode, auto_contain_threshold: autoContainThreshold }),
+  });
+  if (!response.ok) {
+    throw new Error('Failed to update mitigation policy');
+  }
+  return response.json();
+}
+
+// ============================================================================
+// Model Status, Benchmarks & Interactive Training APIs
+// ============================================================================
+
+export interface ModelStatusResponse {
+  model_loaded: boolean;
+  inference_mode: 'pytorch' | 'fallback';
+  model_version: string;
+  training_metadata: Record<string, any>;
+  evaluation_metrics: Record<string, any>;
+  model_config?: Record<string, any>;
+}
+
+export interface BenchmarksResponse {
+  status: string;
+  model_architecture: string;
+  features_dimension: number;
+  binary_metrics: {
+    precision: number;
+    recall: number;
+    f1_score: number;
+    roc_auc: number;
+    pr_auc: number;
+    false_positive_rate: number;
+    false_negative_rate: number;
+  };
+  stage_metrics: Record<string, {
+    precision: number;
+    recall: number;
+    'f1-score': number;
+    support: number;
+  }>;
+  comparison_summary: Array<{
+    modelName: string;
+    f1Score: number;
+    rocAuc: number;
+    falsePositiveRate: number;
+    earlyWarningLeadTimeSec: number;
+    forecastAccuracyT1: number;
+    forecastAccuracyT5: number;
+    isWorldModel: boolean;
+  }>;
+  model_config?: Record<string, any>;
+}
+
+export async function fetchModelStatus(): Promise<ModelStatusResponse> {
+  const response = await fetch(`${API_BASE_URL}/api/model/status`);
+  if (!response.ok) {
+    throw new Error('Failed to fetch model status');
+  }
+  return response.json();
+}
+
+export async function fetchBenchmarks(): Promise<BenchmarksResponse> {
+  const response = await fetch(`${API_BASE_URL}/api/benchmarks`);
+  if (!response.ok) {
+    throw new Error('Failed to fetch benchmarks');
+  }
+  return response.json();
+}
+
+export async function triggerModelTraining(params?: {
+  epochs?: number;
+  batch_size?: number;
+  learning_rate?: number;
+  seq_len?: number;
+}): Promise<any> {
+  const response = await fetch(`${API_BASE_URL}/api/model/train`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(params || {}),
+  });
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({ detail: 'Failed to train model' }));
+    throw new Error(err.detail || 'Failed to train model');
+  }
+  return response.json();
+}
+
+export async function forecastStateSequence(
+  sequence: NetworkStateVector[],
+  horizonSteps: number = 10
+): Promise<ForecastStep[]> {
+  const response = await fetch(`${API_BASE_URL}/api/model/forecast`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ sequence, horizon_steps: horizonSteps }),
+  });
+  if (!response.ok) {
+    throw new Error('Failed to compute model forecast');
+  }
+  const data = await response.json();
+  const latest = sequence[sequence.length - 1];
+  return (data.rollout_steps || []).map((step: any) => toForecastStep(step, latest));
+}
+

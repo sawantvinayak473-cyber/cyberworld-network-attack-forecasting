@@ -85,6 +85,22 @@ CREATE TABLE IF NOT EXISTS ioc_cache (
     enrichment_json TEXT NOT NULL,
     cached_at TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS mitigation_actions (
+    action_id TEXT PRIMARY KEY,
+    target_ip TEXT NOT NULL,
+    target_stage TEXT NOT NULL,
+    action_type TEXT NOT NULL,
+    command_executed TEXT NOT NULL,
+    rollback_command TEXT NOT NULL,
+    status TEXT NOT NULL,
+    applied_at TEXT NOT NULL,
+    expires_at TEXT,
+    execution_mode TEXT NOT NULL,
+    analyst TEXT NOT NULL,
+    alert_id TEXT,
+    notes TEXT DEFAULT ''
+);
 """
 
 class CyberWorldDatabase:
@@ -145,4 +161,48 @@ class CyberWorldDatabase:
         sql = "SELECT * FROM alerts ORDER BY timestamp DESC"
         with self.get_connection() as conn:
             cursor = conn.execute(sql)
+            return [dict(row) for row in cursor.fetchall()]
+
+    def insert_mitigation(self, action: Dict[str, Any]):
+        sql = """
+        INSERT OR REPLACE INTO mitigation_actions (
+            action_id, target_ip, target_stage, action_type, command_executed,
+            rollback_command, status, applied_at, expires_at, execution_mode,
+            analyst, alert_id, notes
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """
+        with self.get_connection() as conn:
+            conn.execute(sql, (
+                action['action_id'],
+                action['target_ip'],
+                action.get('target_stage', 'UNKNOWN'),
+                action.get('action_type', 'FIREWALL_DROP'),
+                action['command_executed'],
+                action['rollback_command'],
+                action.get('status', 'ACTIVE'),
+                action['applied_at'],
+                action.get('expires_at'),
+                action.get('execution_mode', 'SIMULATED'),
+                action.get('analyst', 'SOC-Analyst'),
+                action.get('alert_id'),
+                action.get('notes', ''),
+            ))
+            conn.commit()
+
+    def update_mitigation_status(self, action_id: str, status: str, notes: str = ''):
+        sql = "UPDATE mitigation_actions SET status = ?, notes = ? WHERE action_id = ?"
+        with self.get_connection() as conn:
+            conn.execute(sql, (status, notes, action_id))
+            conn.commit()
+
+    def get_active_mitigations(self) -> List[Dict[str, Any]]:
+        sql = "SELECT * FROM mitigation_actions WHERE status IN ('ACTIVE', 'SIMULATED') ORDER BY applied_at DESC"
+        with self.get_connection() as conn:
+            cursor = conn.execute(sql)
+            return [dict(row) for row in cursor.fetchall()]
+
+    def get_all_mitigations(self, limit: int = 50) -> List[Dict[str, Any]]:
+        sql = "SELECT * FROM mitigation_actions ORDER BY applied_at DESC LIMIT ?"
+        with self.get_connection() as conn:
+            cursor = conn.execute(sql, (limit,))
             return [dict(row) for row in cursor.fetchall()]

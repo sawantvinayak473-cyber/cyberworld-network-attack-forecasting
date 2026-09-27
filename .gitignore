@@ -6,3 +6,26 @@ coverage/
 *.log
 .env*
 !.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+*.egg
+.eggs/
+*.so
+venv/
+.venv/
+
+# Model artifacts (large files - don't commit to git)
+artifacts/models/*.pt
+artifacts/models/*.pkl
+artifacts/models/*.joblib
+artifacts/*.db
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo

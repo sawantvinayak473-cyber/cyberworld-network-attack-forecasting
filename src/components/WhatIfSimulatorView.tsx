@@ -18,6 +18,8 @@ import {
   Network,
   Radio,
   ShieldAlert,
+  ShieldCheck,
+  LoaderCircle,
 } from 'lucide-react';
 import {
   computePerturbedForecast,
@@ -25,6 +27,7 @@ import {
   PRESET_PERTURBATIONS,
 } from '../engine/worldModelSimulator';
 import { AttackStage, NetworkStateVector } from '../types';
+import { applyMitigation } from '../api/cyberWorldApi';
 
 interface WhatIfSimulatorViewProps {
   baseState: NetworkStateVector;
@@ -55,6 +58,10 @@ export const WhatIfSimulatorView: React.FC<WhatIfSimulatorViewProps> = ({
   attackProbability,
 }) => {
   const [activePresetIds, setActivePresetIds] = useState<string[]>(['no-action']);
+  const [isDeploying, setIsDeploying] = useState(false);
+  const [deployResult, setDeployResult] = useState<string | null>(null);
+  const [deployError, setDeployError] = useState<string | null>(null);
+
   const activePresets = useMemo(() => PRESET_PERTURBATIONS.filter((preset) => (
     activePresetIds.includes(preset.id) &&
     (!preset.applicableStages || preset.applicableStages.includes(currentStage))
@@ -280,6 +287,60 @@ export const WhatIfSimulatorView: React.FC<WhatIfSimulatorViewProps> = ({
               Risk Reduction: <span className={comparison.riskDelta < 0 ? 'font-bold text-emerald-300' : 'font-bold text-slate-200'}>{riskDeltaText}</span>
             </div>
           </div>
+
+          {activeInterventionCount > 0 && comparison.riskDelta < 0 && (
+            <div className="mt-4 p-3.5 rounded-lg border border-emerald-800/80 bg-emerald-950/40 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+              <div>
+                <div className="text-xs font-mono font-bold text-emerald-300 flex items-center gap-1.5">
+                  <ShieldCheck className="w-4 h-4 text-emerald-400" />
+                  RECOMMENDED ACTIVE DEFENSE POLICY
+                </div>
+                <div className="text-[11px] text-slate-300 mt-0.5">
+                  Simulated attack probability reduction of <span className="text-emerald-400 font-bold">{riskDeltaText}</span>. Deploy firewall containment immediately to host IP 192.168.1.105.
+                </div>
+              </div>
+              <button
+                onClick={async () => {
+                  setIsDeploying(true);
+                  setDeployResult(null);
+                  setDeployError(null);
+                  try {
+                    const targetIp = '192.168.1.105';
+                    const selectedLabels = activePresets.filter(p => p.id !== 'no-action').map(p => p.label).join(', ');
+                    const result = await applyMitigation({
+                      target_ip: targetIp,
+                      target_stage: currentStage,
+                      action_type: 'DROP_INGRESS',
+                      execution_mode: 'LIVE',
+                      expiry_minutes: 30,
+                      notes: `What-If Intervention deployed: ${selectedLabels}. Peak risk reduced from ${(comparison.originalPeak * 100).toFixed(1)}% to ${(comparison.perturbedPeak * 100).toFixed(1)}%.`,
+                    });
+                    setDeployResult(`Mitigation deployed! Rule ID: ${result.action_id} on ${targetIp}. Action: ${result.command_executed}`);
+                  } catch (e: any) {
+                    setDeployError(e.message || 'Failed to deploy mitigation');
+                  } finally {
+                    setIsDeploying(false);
+                  }
+                }}
+                disabled={isDeploying}
+                className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-slate-950 font-bold text-xs font-mono rounded-lg shadow transition flex items-center gap-1.5 shrink-0"
+              >
+                {isDeploying ? <LoaderCircle className="w-3.5 h-3.5 animate-spin" /> : <ShieldAlert className="w-3.5 h-3.5" />}
+                Deploy to Firewall
+              </button>
+            </div>
+          )}
+
+          {deployResult && (
+            <div className="mt-3 p-2.5 rounded bg-emerald-950/80 border border-emerald-700 text-xs font-mono text-emerald-300">
+              {deployResult}
+            </div>
+          )}
+          {deployError && (
+            <div className="mt-3 p-2.5 rounded bg-red-950/80 border border-red-700 text-xs font-mono text-red-300">
+              {deployError}
+            </div>
+          )}
 
           <div className="mt-4 rounded-lg border border-cyan-900/50 bg-cyan-950/20 p-3 text-sm leading-5 text-slate-300">
             <span className="font-mono text-xs font-bold text-cyan-300">MODEL INTERPRETATION · </span>

@@ -7,18 +7,24 @@ scikit-learn>=1.3.0
 scipy>=1.11.0
 joblib>=1.3.0
 
-# Backend & REST API
+# Explainability (optional)
+# captum>=0.7.0
+
+# Backend & API
 fastapi>=0.110.0
 uvicorn>=0.28.0
-websockets>=12.0
 pydantic>=2.6.0
 python-multipart>=0.0.9
 httpx>=0.27.0
 pyyaml>=6.0.1
+
+# Network & Telemetry Processing (optional)
+# scapy>=2.5.0
+# pyshark>=0.6
+
+# Testing & Utilities
+pytest>=8.0.0
 python-dotenv>=1.0.0
 
-# Google GenAI SDK (for server-side Copilot proxy)
+# Google Gemini SDK (for backend copilot proxy)
 google-genai>=1.0.0
-
-# Testing & Verification
-pytest>=8.0.0

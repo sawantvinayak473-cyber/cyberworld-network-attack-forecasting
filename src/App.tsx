@@ -49,11 +49,16 @@ import {
   NetworkStateVector,
   SimulationScenario,
   SystemConfig,
+  ThreatNotification,
 } from './types';
+import {
+  ThreatNotificationToastContainer,
+  ThreatNotificationTray,
+} from './components/ThreatNotificationSystem';
 import { DEFAULT_CONFIG } from './mockData/scenarios';
 
-// Keep the deterministic, air-gapped simulator as the default demo path.
-const USE_BACKEND_API = false;
+// Try backend API first; falls back to client-side simulator if unavailable.
+const USE_BACKEND_API = true;
 
 type WorldModelInference = ReturnType<typeof computeWorldModelInference>;
 
@@ -92,6 +97,10 @@ export default function App() {
   const [config, setConfig] = useState<SystemConfig>(DEFAULT_CONFIG);
   const [backendInference, setBackendInference] = useState<WorldModelInference | null>(null);
   const [previousForecasts, setPreviousForecasts] = useState<ForecastStep[]>([]);
+  const [notifications, setNotifications] = useState<ThreatNotification[]>([]);
+  const [activeToasts, setActiveToasts] = useState<ThreatNotification[]>([]);
+  const [isNotificationTrayOpen, setIsNotificationTrayOpen] = useState<boolean>(false);
+  const notifiedAlertsRef = useRef<Set<string>>(new Set());
   const previousInferenceRef = useRef<{ window: number; forecasts: ForecastStep[] } | null>(null);
   const previousScenarioRef = useRef<string | null>(null);
 
@@ -150,6 +159,8 @@ export default function App() {
     setPreviousForecasts([]);
     setBackendInference(null);
     previousInferenceRef.current = null;
+    notifiedAlertsRef.current.clear();
+    setActiveToasts([]);
     setActiveScenarioId(id);
     setCurrentWindow(id === 'uploaded' ? 0 : 3); // Start near beginning
   };
@@ -162,6 +173,8 @@ export default function App() {
     setPreviousForecasts([]);
     setBackendInference(null);
     previousInferenceRef.current = null;
+    notifiedAlertsRef.current.clear();
+    setActiveToasts([]);
     setUploadedStateVectors(stateVectors);
     setActiveScenarioId('uploaded');
     setCurrentWindow(0);
@@ -212,6 +225,8 @@ export default function App() {
     setPreviousForecasts([]);
     setBackendInference(null);
     previousInferenceRef.current = null;
+    notifiedAlertsRef.current.clear();
+    setActiveToasts([]);
     setActiveScenarioId(scenarioId);
     setCurrentWindow(windowIndex);
     setCurrentTab('dashboard');
@@ -221,6 +236,8 @@ export default function App() {
     if (currentWindow >= stateVectors.length - 1) {
       setPreviousForecasts([]);
       previousInferenceRef.current = null;
+      notifiedAlertsRef.current.clear();
+      setActiveToasts([]);
       setCurrentWindow(0);
     }
     setIsSimulating(!isSimulating);
@@ -235,6 +252,8 @@ export default function App() {
     setIsSimulating(false);
     setPreviousForecasts([]);
     previousInferenceRef.current = null;
+    notifiedAlertsRef.current.clear();
+    setActiveToasts([]);
     setCurrentWindow(0);
   };
 
@@ -493,6 +512,112 @@ export default function App() {
     setCurrentTab('investigation');
   };
 
+  // Live Threat Notification Engine:
+  // Monitors real-time alerts and triggers HUD toasts and notification feed entries
+  useEffect(() => {
+    alertsState.forEach((alert) => {
+      if (
+        (alert.severity === 'CRITICAL' || alert.severity === 'HIGH' || alert.severity === 'ELEVATED') &&
+        !notifiedAlertsRef.current.has(alert.id)
+      ) {
+        notifiedAlertsRef.current.add(alert.id);
+
+        const isCrit = alert.severity === 'CRITICAL';
+        const isH = alert.severity === 'HIGH';
+        const title = isCrit
+          ? `Critical Threat: ${alert.currentStage.replace(/_/g, ' ')} Escalation`
+          : isH
+          ? `High-Risk Anomaly: ${alert.currentStage.replace(/_/g, ' ')} Active`
+          : `Elevated Anomaly: ${alert.currentStage.replace(/_/g, ' ')}`;
+
+        const desc =
+          alert.predictedNextStage && alert.predictedNextStage !== 'BENIGN'
+            ? `World Model forecasts progression to ${alert.predictedNextStage.replace(/_/g, ' ')} with ${(alert.attackProbability * 100).toFixed(0)}% probability.`
+            : `Abnormal flow pattern detected on ${alert.destinationIp} with ${(alert.attackProbability * 100).toFixed(0)}% attack probability.`;
+
+        const newNotification: ThreatNotification = {
+          id: `notif-${alert.id}-${Date.now()}`,
+          timestamp: alert.timestamp,
+          timeOffsetSeconds: alert.timeOffsetSeconds,
+          severity: alert.severity,
+          title,
+          description: desc,
+          currentStage: alert.currentStage,
+          predictedNextStage: alert.predictedNextStage,
+          attackProbability: alert.attackProbability,
+          earlyWarningSeconds: alert.earlyWarningSeconds,
+          sourceIp: alert.sourceIp,
+          destinationIp: alert.destinationIp,
+          alertId: alert.id,
+          alertRef: alert,
+          isRead: false,
+          createdAt: Date.now(),
+        };
+
+        setNotifications((prev) => [newNotification, ...prev]);
+
+        // Push to active toasts if HIGH or CRITICAL (capped at 3 simultaneous toasts)
+        if (isCrit || isH) {
+          setActiveToasts((prev) => [newNotification, ...prev.slice(0, 2)]);
+        }
+      }
+    });
+  }, [alertsState]);
+
+  const handleDismissToast = (id: string) => {
+    setActiveToasts((prev) => prev.filter((t) => t.id !== id));
+  };
+
+  const handleInvestigateNotification = (notif: ThreatNotification) => {
+    setNotifications((prev) =>
+      prev.map((n) => (n.id === notif.id ? { ...n, isRead: true } : n))
+    );
+    handleDismissToast(notif.id);
+    setIsNotificationTrayOpen(false);
+
+    const targetAlert = notif.alertRef || alertsState.find((a) => a.id === notif.alertId);
+    if (targetAlert) {
+      setSelectedAlert(targetAlert);
+    }
+    setCurrentTab('investigation');
+  };
+
+  const handleSOARNotification = (notif: ThreatNotification) => {
+    setNotifications((prev) =>
+      prev.map((n) => (n.id === notif.id ? { ...n, isRead: true } : n))
+    );
+    handleDismissToast(notif.id);
+    setIsNotificationTrayOpen(false);
+
+    const targetAlert = notif.alertRef || alertsState.find((a) => a.id === notif.alertId);
+    if (targetAlert) {
+      setSelectedAlert(targetAlert);
+    }
+    setCurrentTab('investigation');
+  };
+
+  const handleCopilotNotification = (notif: ThreatNotification) => {
+    setNotifications((prev) =>
+      prev.map((n) => (n.id === notif.id ? { ...n, isRead: true } : n))
+    );
+    handleDismissToast(notif.id);
+    setIsCopilotOpen(true);
+  };
+
+  const handleMarkAllNotificationsRead = () => {
+    setNotifications((prev) => prev.map((n) => ({ ...n, isRead: true })));
+  };
+
+  const handleClearNotifications = () => {
+    setNotifications([]);
+    setActiveToasts([]);
+  };
+
+  const unreadNotificationCount = useMemo(
+    () => notifications.filter((n) => !n.isRead).length,
+    [notifications]
+  );
+
   const copilotContext = useMemo(() => {
     const activeAlert = selectedAlert || alertsState[0];
     return {
@@ -572,6 +697,9 @@ export default function App() {
         onDemoPrevious={handleDemoPrevious}
         onDemoNext={handleDemoNext}
         onQuickScenario={handleQuickScenario}
+        unreadNotificationCount={unreadNotificationCount}
+        onToggleNotificationTray={() => setIsNotificationTrayOpen((prev) => !prev)}
+        isNotificationTrayOpen={isNotificationTrayOpen}
       />
 
       {/* Main Container */}
@@ -754,6 +882,28 @@ export default function App() {
         onClose={() => setIsSettingsModalOpen(false)}
         config={config}
         onSaveConfig={setConfig}
+      />
+
+      {/* Real-time Threat HUD Toasts */}
+      <ThreatNotificationToastContainer
+        toasts={activeToasts}
+        onDismiss={handleDismissToast}
+        onInvestigate={handleInvestigateNotification}
+        onSOAR={handleSOARNotification}
+        onCopilot={handleCopilotNotification}
+      />
+
+      {/* Slide-over Threat Notification Feed Tray */}
+      <ThreatNotificationTray
+        isOpen={isNotificationTrayOpen}
+        onClose={() => setIsNotificationTrayOpen(false)}
+        notifications={notifications}
+        onDismiss={handleDismissToast}
+        onInvestigate={handleInvestigateNotification}
+        onSOAR={handleSOARNotification}
+        onCopilot={handleCopilotNotification}
+        onMarkAllRead={handleMarkAllNotificationsRead}
+        onClearAll={handleClearNotifications}
       />
     </div>
   );

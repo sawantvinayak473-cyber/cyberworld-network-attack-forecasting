@@ -1,7 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   FileSearch,
   ShieldAlert,
+  ShieldCheck,
   Clock,
   ArrowRight,
   CheckCircle2,
@@ -12,12 +13,27 @@ import {
   Radio,
   ExternalLink,
   ChevronLeft,
+  Zap,
+  Undo2,
+  Check,
+  Ban,
+  Activity,
+  Cpu,
 } from 'lucide-react';
 import { Alert, NetworkFlow } from '../types';
 import { ATTACK_STAGE_INFO } from '../mockData/scenarios';
 import { IOCEnrichmentCard } from './IOCEnrichmentCard';
 import { VulnerabilityCorrelationPanel } from './VulnerabilityCorrelationPanel';
 import { correlateForecastToVulnerabilities } from '../engine/worldModelSimulator';
+import {
+  applyMitigation,
+  rollbackMitigation,
+  fetchActiveMitigations,
+  fetchMitigationPolicy,
+  updateMitigationPolicy,
+  MitigationAction,
+  MitigationPolicy,
+} from '../api/cyberWorldApi';
 
 interface InvestigationViewProps {
   selectedAlert: Alert | null;
@@ -51,6 +67,81 @@ export const InvestigationView: React.FC<InvestigationViewProps> = ({
   const [notes, setNotes] = useState(selectedAlert.analystNotes || '');
   const [actionsTaken, setActionsTaken] = useState<string[]>([]);
   const [isSaved, setIsSaved] = useState(false);
+
+  // Pillar 2: Closed-Loop Active Defense State
+  const [activeMitigations, setActiveMitigations] = useState<MitigationAction[]>([]);
+  const [policy, setPolicy] = useState<MitigationPolicy | null>(null);
+  const [mitigatingAction, setMitigatingAction] = useState<string | null>(null);
+  const [mitigationMessage, setMitigationMessage] = useState<string | null>(null);
+  const [mitigationError, setMitigationError] = useState<string | null>(null);
+
+  const refreshMitigations = () => {
+    fetchActiveMitigations().then(setActiveMitigations).catch(() => {});
+    fetchMitigationPolicy().then(setPolicy).catch(() => {});
+  };
+
+  useEffect(() => {
+    refreshMitigations();
+    const interval = setInterval(refreshMitigations, 5000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const handleApplyContainment = async (actionText: string, idx: number) => {
+    setMitigatingAction(`act-${idx}`);
+    setMitigationError(null);
+    setMitigationMessage(null);
+    try {
+      const isEgress = actionText.toLowerCase().includes('outbound') || actionText.toLowerCase().includes('egress');
+      const actionType = isEgress ? 'DROP_EGRESS' : 'DROP_INGRESS';
+      const targetIp = isEgress ? selectedAlert.destinationIp : selectedAlert.sourceIp;
+
+      const record = await applyMitigation({
+        target_ip: targetIp,
+        target_stage: selectedAlert.predictedNextStage,
+        action_type: actionType,
+        execution_mode: 'LIVE',
+        expiry_minutes: 30,
+        alert_id: selectedAlert.id,
+        notes: actionText,
+      });
+
+      setMitigationMessage(`⚡ Neutralized! Rule ${record.action_id} active on ${targetIp}. Auto-rollback in 30 mins.`);
+      setTimeout(() => setMitigationMessage(null), 7000);
+      refreshMitigations();
+      if (!actionsTaken.includes(`act-${idx}`)) {
+        setActionsTaken([...actionsTaken, `act-${idx}`]);
+      }
+    } catch (err: any) {
+      setMitigationError(err.message || 'Mitigation failed');
+      setTimeout(() => setMitigationError(null), 5000);
+    } finally {
+      setMitigatingAction(null);
+    }
+  };
+
+  const handleRollback = async (actionId: string) => {
+    try {
+      await rollbackMitigation(actionId, 'Analyst Manual Unblock');
+      setMitigationMessage(`↩️ Rule ${actionId} rolled back successfully. Target unblocked.`);
+      setTimeout(() => setMitigationMessage(null), 5000);
+      refreshMitigations();
+    } catch (err: any) {
+      setMitigationError(err.message || 'Rollback failed');
+      setTimeout(() => setMitigationError(null), 5000);
+    }
+  };
+
+  const handleTogglePolicyMode = async () => {
+    if (!policy) return;
+    const newMode = policy.policy_mode === 'MANUAL_APPROVAL' ? 'AUTONOMOUS_PREDICTIVE' : 'MANUAL_APPROVAL';
+    try {
+      const updated = await updateMitigationPolicy(newMode, policy.auto_contain_threshold);
+      setPolicy(updated);
+    } catch (err: any) {
+      setMitigationError(err.message || 'Policy update failed');
+      setTimeout(() => setMitigationError(null), 4000);
+    }
+  };
 
   const handleSaveNotes = () => {
     onUpdateAnalystNotes(selectedAlert.id, notes);
@@ -228,32 +319,67 @@ export const InvestigationView: React.FC<InvestigationViewProps> = ({
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
         {/* Playbook Containment Actions */}
         <div className="bg-slate-900/80 border border-slate-800 rounded-xl p-4 shadow-sm">
-          <h4 className="text-xs font-bold font-mono uppercase text-slate-300 tracking-wider mb-2">
-            Recommended Containment Playbook
-          </h4>
+          <div className="flex items-center justify-between mb-2">
+            <h4 className="text-xs font-bold font-mono uppercase text-slate-300 tracking-wider flex items-center space-x-1.5">
+              <Zap className="w-3.5 h-3.5 text-rose-400" />
+              <span>Closed-Loop Containment Playbook (SOAR)</span>
+            </h4>
+            <span className="text-[10px] px-2 py-0.5 rounded bg-rose-950 text-rose-300 border border-rose-800 font-mono">
+              Auto-Rollback: 30m
+            </span>
+          </div>
+
           <p className="text-xs text-slate-400 mb-3">
-            One-click defensive mitigation measures generated from the forward world model prediction:
+            One-click automated countermeasures generated from the forward world model prediction:
           </p>
+
+          {mitigationMessage && (
+            <div className="mb-3 p-2.5 rounded-lg bg-emerald-950/60 border border-emerald-700/60 text-emerald-300 text-xs font-mono flex items-center space-x-2">
+              <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+              <span>{mitigationMessage}</span>
+            </div>
+          )}
+
+          {mitigationError && (
+            <div className="mb-3 p-2.5 rounded-lg bg-rose-950/60 border border-rose-700/60 text-rose-300 text-xs font-mono flex items-center space-x-2">
+              <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0" />
+              <span>{mitigationError}</span>
+            </div>
+          )}
 
           <div className="space-y-2">
             {selectedAlert.recommendedActions.map((action, idx) => {
               const isApplied = actionsTaken.includes(`act-${idx}`);
+              const isProcessing = mitigatingAction === `act-${idx}`;
+
               return (
                 <div
                   key={idx}
                   className="p-3 rounded-lg bg-slate-950/60 border border-slate-800 flex items-center justify-between text-xs font-mono"
                 >
-                  <span className="text-slate-200 pr-2">{action}</span>
-                  <button
-                    onClick={() => toggleAction(`act-${idx}`)}
-                    className={`px-3 py-1.5 rounded text-xs font-bold shrink-0 transition-all ${
-                      isApplied
-                        ? 'bg-emerald-600 text-white'
-                        : 'bg-slate-800 hover:bg-slate-700 text-cyan-400 border border-slate-700'
-                    }`}
-                  >
-                    {isApplied ? 'Deployed' : 'Execute'}
-                  </button>
+                  <div className="pr-2">
+                    <span className="text-slate-200 block">{action}</span>
+                    <span className="text-[10px] text-slate-500">
+                      Target: <strong className="text-cyan-400">{selectedAlert.sourceIp}</strong> &bull; Action: <strong className="text-amber-400">Host Firewall Drop</strong>
+                    </span>
+                  </div>
+                  <div className="flex items-center space-x-2 shrink-0">
+                    {isApplied ? (
+                      <span className="flex items-center space-x-1 px-3 py-1.5 rounded bg-emerald-950 border border-emerald-700 text-emerald-300 text-xs font-bold">
+                        <Check className="w-3.5 h-3.5" />
+                        <span>Active</span>
+                      </span>
+                    ) : (
+                      <button
+                        onClick={() => handleApplyContainment(action, idx)}
+                        disabled={isProcessing}
+                        className="flex items-center space-x-1.5 px-3 py-1.5 rounded text-xs font-bold bg-rose-600 hover:bg-rose-500 text-white shadow-rose-950/50 transition-all border border-rose-400 disabled:opacity-50"
+                      >
+                        <Zap className="w-3.5 h-3.5" />
+                        <span>{isProcessing ? 'Deploying...' : '1-Click Mitigate'}</span>
+                      </button>
+                    )}
+                  </div>
                 </div>
               );
             })}
@@ -291,6 +417,97 @@ export const InvestigationView: React.FC<InvestigationViewProps> = ({
             </button>
           </div>
         </div>
+      </div>
+
+      {/* Active SOAR Containments & Guardrails Registry (Pillar 2) */}
+      <div className="bg-slate-900/90 border border-slate-800 rounded-xl p-5 shadow-sm space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between pb-3 border-b border-slate-800 gap-3">
+          <div>
+            <div className="flex items-center space-x-2">
+              <ShieldCheck className="w-4 h-4 text-emerald-400" />
+              <h4 className="text-xs font-bold font-mono uppercase text-slate-200 tracking-wider">
+                SOAR Active Quarantine Registry & Safety Guardrails
+              </h4>
+            </div>
+            <p className="text-xs text-slate-400 mt-0.5">
+              Live containment rules enforced across network endpoints with autonomous rollback safety timers.
+            </p>
+          </div>
+
+          <div className="flex items-center space-x-2">
+            <span className="text-xs font-mono text-slate-400">Policy:</span>
+            <button
+              onClick={handleTogglePolicyMode}
+              className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-mono font-bold transition-all border ${
+                policy?.policy_mode === 'AUTONOMOUS_PREDICTIVE'
+                  ? 'bg-rose-950 text-rose-300 border-rose-700 shadow-rose-950/30'
+                  : 'bg-slate-800 text-slate-300 border-slate-700'
+              }`}
+            >
+              <Cpu className="w-3.5 h-3.5" />
+              <span>
+                {policy?.policy_mode === 'AUTONOMOUS_PREDICTIVE'
+                  ? '🤖 AUTONOMOUS PREDICTIVE SOAR'
+                  : '👤 MANUAL ANALYST APPROVAL'}
+              </span>
+            </button>
+          </div>
+        </div>
+
+        {/* Safety Whitelist Banner */}
+        <div className="p-2.5 rounded-lg bg-slate-950/80 border border-slate-800 flex items-center justify-between text-xs font-mono">
+          <span className="text-slate-400 flex items-center space-x-2">
+            <Lock className="w-3.5 h-3.5 text-cyan-400" />
+            <span>Infrastructure Whitelist Guardrail: Gateway (192.168.1.1), DNS (8.8.8.8, 1.1.1.1), and localhost (127.0.0.1) are protected from isolation.</span>
+          </span>
+          <span className="text-emerald-400 text-[11px] font-bold">100% Protected</span>
+        </div>
+
+        {/* Active Rules List */}
+        {activeMitigations.length === 0 ? (
+          <div className="p-4 rounded-lg bg-slate-950/40 border border-dashed border-slate-800 text-center text-xs font-mono text-slate-500">
+            No active quarantine rules currently enforced. Execute a playbook action above to test 1-click proactive mitigation.
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {activeMitigations.map((m) => (
+              <div
+                key={m.action_id}
+                className="p-3 rounded-lg bg-slate-950/80 border border-slate-800/80 flex flex-col md:flex-row md:items-center justify-between gap-3 text-xs font-mono"
+              >
+                <div>
+                  <div className="flex items-center space-x-2">
+                    <span className="font-bold text-rose-400">{m.action_id}</span>
+                    <span className="text-slate-400">&bull; Target:</span>
+                    <strong className="text-slate-200">{m.target_ip}</strong>
+                    <span className="text-[10px] px-2 py-0.5 rounded bg-rose-950/80 text-rose-300 border border-rose-800">
+                      {m.action_type}
+                    </span>
+                    <span className="text-[10px] px-2 py-0.5 rounded bg-slate-800 text-slate-300">
+                      {m.execution_mode}
+                    </span>
+                  </div>
+                  <div className="text-[11px] text-slate-500 mt-1 truncate max-w-xl">
+                    Command: <code className="text-cyan-300">{m.command_executed}</code>
+                  </div>
+                  <div className="text-[10px] text-slate-500 mt-0.5">
+                    Applied: {m.applied_at} &bull; Expires: {m.expires_at || 'Manual'} &bull; By: {m.analyst}
+                  </div>
+                </div>
+
+                <div className="flex items-center space-x-2 shrink-0">
+                  <button
+                    onClick={() => handleRollback(m.action_id)}
+                    className="flex items-center space-x-1.5 px-3 py-1.5 rounded bg-slate-800 hover:bg-slate-700 text-amber-300 border border-amber-700/60 text-xs font-mono font-bold transition-all"
+                  >
+                    <Undo2 className="w-3.5 h-3.5" />
+                    <span>Rollback / Unblock</span>
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );

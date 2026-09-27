@@ -1,35 +1,25 @@
-version: '3.8'
+
+# Note: The primary production deployment is orchestrated from the project root.
+# Run: docker compose -f ../docker-compose.yml up --build
 
 services:
-  cyberworld-api:
+  cyberworld-backend:
     build:
-      context: .
-      dockerfile: Dockerfile
-    container_name: cyberworld_backend
+      context: ..
+      dockerfile: cyberworld/Dockerfile
+    container_name: cyberworld-backend
     ports:
       - "8000:8000"
     environment:
       - CYBERWORLD_ENV=production
-      - DATABASE_URL=sqlite:///artifacts/cyberworld.db
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+      - CYBERWORLD_API_KEY=${CYBERWORLD_API_KEY:-}
     volumes:
-      - ./artifacts:/app/artifacts
-      - ./configs:/app/configs
-    command: uvicorn backend.api:app --host 0.0.0.0 --port 8000 --reload
+      - ../artifacts:/app/artifacts
+      - ./configs:/app/cyberworld/configs
     restart: unless-stopped
-
-  cyberworld-ui:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    container_name: cyberworld_streamlit
-    ports:
-      - "8501:8501"
-    environment:
-      - STREAMLIT_SERVER_PORT=8501
-      - STREAMLIT_SERVER_HEADLESS=true
-    volumes:
-      - ./artifacts:/app/artifacts
-    command: streamlit run app/main.py --server.port 8501 --server.address 0.0.0.0
-    depends_on:
-      - cyberworld-api
-    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3

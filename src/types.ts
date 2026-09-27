@@ -154,6 +154,25 @@ export interface Alert {
   rawFlowCount: number;
 }
 
+export interface ThreatNotification {
+  id: string;
+  timestamp: string;
+  timeOffsetSeconds?: number;
+  severity: AlertSeverity;
+  title: string;
+  description: string;
+  currentStage: AttackStage;
+  predictedNextStage: AttackStage;
+  attackProbability: number;
+  earlyWarningSeconds: number;
+  sourceIp: string;
+  destinationIp: string;
+  alertId: string;
+  alertRef?: Alert;
+  isRead: boolean;
+  createdAt: number;
+}
+
 export interface IncidentCampaign {
   id: string;
   title: string;

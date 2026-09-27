@@ -17,6 +17,7 @@ import {
   ArrowRight,
 } from 'lucide-react';
 import type { NetworkStateVector } from '../types';
+import { triggerModelTraining } from '../api/cyberWorldApi';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
 
@@ -74,23 +75,43 @@ export const DatasetTrainingView: React.FC<DatasetTrainingViewProps> = ({ onUseU
   const [dropout, setDropout] = useState(0.3);
   const [windowSeconds, setWindowSeconds] = useState(10);
   const [seqLength, setSeqLength] = useState(10);
+  const [trainingMessage, setTrainingMessage] = useState<string | null>(null);
 
-  const handleSimulateTraining = () => {
+  const handleTrainModel = async () => {
     setIsTraining(true);
-    setTrainProgress(0);
-    setCurrentEpoch(0);
+    setTrainProgress(10);
+    setCurrentEpoch(1);
+    setTrainingMessage('Invoking PyTorch AdamW optimization on backend worker thread...');
 
-    let ep = 0;
+    let currentEp = 1;
     const interval = setInterval(() => {
-      ep += 1;
-      setCurrentEpoch(ep);
-      setTrainProgress(Math.round((ep / epochs) * 100));
-
-      if (ep >= epochs) {
-        clearInterval(interval);
-        setIsTraining(false);
+      if (currentEp < epochs - 1) {
+        currentEp += 1;
+        setCurrentEpoch(currentEp);
+        setTrainProgress(Math.round((currentEp / epochs) * 90));
       }
-    }, 120);
+    }, 400);
+
+    try {
+      const res = await triggerModelTraining({
+        epochs,
+        batch_size: 32,
+        seq_len: seqLength,
+      });
+      clearInterval(interval);
+      setCurrentEpoch(epochs);
+      setTrainProgress(100);
+      const f1Str = res.model_config?.f1_score ? `${(res.model_config.f1_score * 100).toFixed(1)}%` : 'Active';
+      setTrainingMessage(`PyTorch Training Complete! Model trained for ${epochs} epochs (Test F1: ${f1Str}). Weights hot-reloaded.`);
+    } catch (e: any) {
+      clearInterval(interval);
+      console.warn('Backend training error or unavailable, falling back to simulated completion:', e);
+      setCurrentEpoch(epochs);
+      setTrainProgress(100);
+      setTrainingMessage('Training finished (Simulated fallback - backend training worker unavailable).');
+    } finally {
+      setIsTraining(false);
+    }
   };
 
   const uploadTelemetry = async (file: File) => {
@@ -416,19 +437,25 @@ export const DatasetTrainingView: React.FC<DatasetTrainingViewProps> = ({ onUseU
           </div>
 
           {/* Training Action */}
-          <div className="pt-2 border-t border-slate-800 flex items-center justify-between">
+          <div className="pt-2 border-t border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div className="text-xs font-mono text-slate-400">
-              {isTraining ? `Training Epoch ${currentEpoch}/${epochs}...` : 'Ready to train'}
+              {isTraining ? `Training PyTorch Model: Epoch ${currentEpoch}/${epochs}...` : 'Ready to train real PyTorch model'}
             </div>
             <button
-              onClick={handleSimulateTraining}
+              onClick={handleTrainModel}
               disabled={isTraining}
-              className="flex items-center space-x-1.5 px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white text-xs font-bold font-mono transition-colors"
+              className="flex items-center space-x-1.5 px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white text-xs font-bold font-mono transition-colors shrink-0"
             >
-              <Play className="w-3.5 h-3.5" />
-              <span>{isTraining ? 'Training Model...' : 'Train Model & Save Checkpoint'}</span>
+              {isTraining ? <LoaderCircle className="w-3.5 h-3.5 animate-spin" /> : <Play className="w-3.5 h-3.5" />}
+              <span>{isTraining ? 'Training PyTorch Model...' : 'Train PyTorch Model & Hot-Reload'}</span>
             </button>
           </div>
+
+          {trainingMessage && (
+            <div className="p-2.5 rounded-lg bg-slate-950 border border-emerald-800/80 text-xs font-mono text-emerald-300">
+              {trainingMessage}
+            </div>
+          )}
 
           {/* Progress bar */}
           {isTraining && (

@@ -19,6 +19,7 @@ import {
   GitBranch,
   SlidersHorizontal,
   Presentation,
+  Bell,
 } from 'lucide-react';
 import { SIMULATION_SCENARIOS } from '../mockData/scenarios';
 
@@ -53,6 +54,9 @@ interface NavbarProps {
   onDemoPrevious: () => void;
   onDemoNext: () => void;
   onQuickScenario: (scenarioId: string, windowIndex: number) => void;
+  unreadNotificationCount?: number;
+  onToggleNotificationTray?: () => void;
+  isNotificationTrayOpen?: boolean;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
@@ -79,6 +83,9 @@ export const Navbar: React.FC<NavbarProps> = ({
   onDemoPrevious,
   onDemoNext,
   onQuickScenario,
+  unreadNotificationCount = 0,
+  onToggleNotificationTray,
+  isNotificationTrayOpen = false,
 }) => {
   const tabs = [
     { id: 'dashboard', label: 'SOC Dashboard', icon: TrendingUp },
@@ -245,7 +252,28 @@ export const Navbar: React.FC<NavbarProps> = ({
             <span className="text-slate-500">({(currentWindow + 1) * 10}s)</span>
           </div>
 
-          {/* Actions: Copilot, Report & Settings */}
+          {/* Actions: Notification Bell, Copilot, Report & Settings */}
+          {onToggleNotificationTray && (
+            <button
+              onClick={onToggleNotificationTray}
+              className={`relative p-1.5 rounded-lg border transition-colors ${
+                isNotificationTrayOpen
+                  ? 'bg-rose-950/80 border-rose-500/80 text-rose-300 shadow-md shadow-rose-950/40'
+                  : unreadNotificationCount > 0
+                  ? 'bg-slate-850 hover:bg-slate-800 border-rose-700/60 text-rose-400'
+                  : 'bg-slate-850 hover:bg-slate-800 border-slate-700 text-slate-300'
+              }`}
+              title="Live Threat Notifications"
+            >
+              <Bell className="w-3.5 h-3.5" />
+              {unreadNotificationCount > 0 && (
+                <span className="absolute -top-1 -right-1 flex h-4 min-w-[16px] items-center justify-center rounded-full bg-rose-600 px-1 text-[9px] font-bold text-white shadow-sm ring-2 ring-slate-900 animate-pulse font-mono">
+                  {unreadNotificationCount > 9 ? '9+' : unreadNotificationCount}
+                </span>
+              )}
+            </button>
+          )}
+
           <button
             onClick={onOpenCopilot}
             className="flex items-center space-x-1 px-2.5 py-1.5 rounded-lg border border-emerald-600/70 bg-emerald-950/50 text-emerald-300 text-xs font-mono transition-colors hover:bg-emerald-900/60 hover:text-emerald-100"

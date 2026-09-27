@@ -1,0 +1,35 @@
+# Dependencies
+node_modules/
+.venv/
+venv/
+env/
+
+# Build outputs
+dist/
+build/
+coverage/
+
+# Python cache and bytecode
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.pytest_cache/
+
+# Local database instances (will be mounted as volumes)
+artifacts/*.db
+artifacts/*.sqlite
+artifacts/*.sqlite3
+
+# Git and OS metadata
+.git/
+.github/
+.DS_Store
+Thumbs.db
+*.log
+
+# Environment files containing local secrets
+.env.local
+.env
+!cyberworld/.env.example
+!.env.example
